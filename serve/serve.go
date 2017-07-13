@@ -22,8 +22,11 @@ var boundedInterfaces map[string]bool
 
 var tunnel *yamux.Session
 
+var udpStreams map[string]net.Conn
+
 func main() {
 	boundedInterfaces = map[string]bool{}
+	udpStreams = map[string]net.Conn{}
 
 	flag.Parse()
 
@@ -117,7 +120,7 @@ func bind(ipnet *net.IPNet, ports []bindPort) {
 			if ipnet.Contains(ifaceIP) {
 				if _, found := boundedInterfaces[ip]; !found {
 					log.Printf("Found interface with IP [%s] which is contained in the given net [%s]. Binding ports: %v\n", ip, ipnet, ports)
-					for i, port := range ports {
+					for _, port := range ports {
 						if port.Protocol == "tcp" {
 							l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", ip, port.Port))
 							if err != nil {
@@ -131,7 +134,7 @@ func bind(ipnet *net.IPNet, ports []bindPort) {
 										log.Println(err)
 										continue
 									}
-									go startTunnel("tcp", ip, port.Port, c)
+									go tunnelTCP("tcp", ip, port.Port, c)
 								}
 							}()
 						} else {
@@ -142,12 +145,21 @@ func bind(ipnet *net.IPNet, ports []bindPort) {
 								continue
 							}
 							go func() {
-								serverConn, err := net.ListenUDP("udp", serverAddr)
+								udpConn, err := net.ListenUDP("udp", serverAddr)
 								if err != nil {
 									log.Println(err)
 									return
 								}
-								startTunnel("udp", ip, port.Port, serverConn)
+								buf := make([]byte, 1600)
+								for {
+									n, src, err := udpConn.ReadFromUDP(buf)
+									if err != nil {
+										log.Println(err)
+										continue
+									}
+									packet := buf[:n]
+									go tunnelUDP(ip, port.Port, packet, src, udpConn)
+								}
 							}()
 						}
 					}
@@ -158,7 +170,56 @@ func bind(ipnet *net.IPNet, ports []bindPort) {
 	}
 }
 
-func startTunnel(protocol, ip string, port int, c net.Conn) {
+func tunnelUDP(ip string, port int, packet []byte, src *net.UDPAddr, udpConn *net.UDPConn) {
+	if tunnel == nil {
+		log.Printf("No tunnel has been made")
+		return
+	}
+
+	if _, found := udpStreams[src.String()]; !found {
+		stream, err := tunnel.Open()
+		if err != nil {
+			panic(err)
+		}
+
+		go func() {
+			defer func() {
+				stream.Close()
+				delete(udpStreams, src.String())
+			}()
+
+			buf := make([]byte, 1600)
+			for {
+				n, err := stream.Read(buf)
+				if err != nil {
+					return
+				}
+				b := buf[:n]
+				_, err = udpConn.WriteToUDP(b, src)
+				if err != nil {
+					return
+				}
+			}
+		}()
+
+		header := fmt.Sprintf("%s %s %d", "udp", ip, port)
+		if len(header) < 25 {
+			header = fmt.Sprintf("%s%s", header, strings.Repeat(" ", 25-len(header)))
+		}
+		header = fmt.Sprintf("%s\n", header)
+		stream.Write([]byte(header))
+
+		udpStreams[src.String()] = stream
+	}
+
+	stream := udpStreams[src.String()]
+	_, err := stream.Write(packet)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func tunnelTCP(protocol, ip string, port int, c net.Conn) {
 	defer c.Close()
 
 	if tunnel == nil {
