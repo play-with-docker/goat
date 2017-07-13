@@ -98,29 +98,27 @@ func connect(laddr string) {
 func tunnel(protocol, ip string, port int, c net.Conn) {
 	defer c.Close()
 
-	var conn net.Conn
 	raddr := fmt.Sprintf("%s:%d", ip, port)
-	if protocol == "tcp" {
-		co, err := net.Dial("tcp", raddr)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		conn = co
-	} else {
-		addr, _ := net.ResolveUDPAddr("udp", raddr)
-		co, err := net.DialUDP("udp", nil, addr)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		conn = co
+	conn, err := dialer.Dial(protocol, raddr)
+	if err != nil {
+		log.Println(err)
+		return
 	}
 	defer conn.Close()
 
 	log.Printf("Tunneling [%s] to [%s:%d]\n", protocol, ip, port)
 
-	go io.Copy(conn, c)
-	io.Copy(c, conn)
-	log.Println("Stopped tunneling")
+	errc := make(chan error, 2)
+	cp := func(dst io.Writer, src io.Reader) {
+		_, err := io.Copy(dst, src)
+		errc <- err
+	}
+
+	go cp(conn, c)
+	go cp(c, conn)
+
+	<-errc
+
+	log.Println("Stopped tunneling [%s] to [%s:%d]\n", protocol, ip, port)
+	return
 }

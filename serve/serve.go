@@ -117,7 +117,6 @@ func bind(ipnet *net.IPNet, ports []bindPort) {
 			if ipnet.Contains(ifaceIP) {
 				if _, found := boundedInterfaces[ip]; !found {
 					log.Printf("Found interface with IP [%s] which is contained in the given net [%s]. Binding ports: %v\n", ip, ipnet, ports)
-					listeners := make([]net.Listener, len(ports))
 					for i, port := range ports {
 						if port.Protocol == "tcp" {
 							l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", ip, port.Port))
@@ -125,7 +124,6 @@ func bind(ipnet *net.IPNet, ports []bindPort) {
 								log.Println(err)
 								return
 							}
-							listeners[i] = l
 							go func() {
 								for {
 									c, err := l.Accept()
@@ -180,8 +178,19 @@ func startTunnel(protocol, ip string, port int, c net.Conn) {
 	}
 	header = fmt.Sprintf("%s\n", header)
 	stream.Write([]byte(header))
-	go io.Copy(c, stream)
-	io.Copy(stream, c)
+
+	errc := make(chan error, 2)
+	cp := func(dst io.Writer, src io.Reader) {
+		_, err := io.Copy(dst, src)
+		errc <- err
+	}
+
+	go cp(c, stream)
+	go cp(stream, c)
+
+	<-errc
+
+	return
 }
 
 func registerTunnel(c net.Conn) {
