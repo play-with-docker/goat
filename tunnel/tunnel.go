@@ -119,6 +119,6 @@ func tunnel(protocol, ip string, port int, c net.Conn) {
 
 	<-errc
 
-	log.Println("Stopped tunneling [%s] to [%s:%d]\n", protocol, ip, port)
+	log.Printf("Stopped tunneling [%s] to [%s:%d]\n", protocol, ip, port)
 	return
 }
