@@ -59,9 +59,25 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	time.AfterFunc(time.Second, func() {
-		bind(ipnet, bindPorts)
-	})
+	go func() {
+		c := time.Tick(time.Second)
+		for range c {
+			bind(ipnet, bindPorts)
+		}
+	}()
+	go func() {
+		c := time.Tick(time.Second)
+		for range c {
+			if tunnel != nil {
+				_, err := tunnel.Ping()
+				if err != nil {
+					tunnel.Close()
+					log.Printf("Client disconnected %s\n", tunnel.RemoteAddr().String())
+					tunnel = nil
+				}
+			}
+		}
+	}()
 	l, err := net.Listen("tcp", laddr)
 	if err != nil {
 		log.Fatal(err)
@@ -158,20 +174,25 @@ func startTunnel(protocol, ip string, port int, c net.Conn) {
 	}
 	defer stream.Close()
 
-	stream.Write([]byte(fmt.Sprintf("%s %s %d\n", protocol, ip, port)))
+	header := fmt.Sprintf("%s %s %d", protocol, ip, port)
+	if len(header) < 25 {
+		header = fmt.Sprintf("%s%s", header, strings.Repeat(" ", 25-len(header)))
+	}
+	header = fmt.Sprintf("%s\n", header)
+	stream.Write([]byte(header))
 	go io.Copy(c, stream)
 	io.Copy(stream, c)
 }
 
 func registerTunnel(c net.Conn) {
 	if tunnel != nil {
-		log.Printf("There is already an opened tunnel. Discarding.\n")
-		c.Close()
-		return
+		log.Printf("There is already an opened tunnel. Disconnecting client %s.\n", tunnel.RemoteAddr().String())
+		tunnel.Close()
 	}
 	session, err := yamux.Client(c, nil)
 	if err != nil {
 		panic(err)
 	}
 	tunnel = session
+	log.Printf("Client connected from: %s", c.RemoteAddr().String())
 }
