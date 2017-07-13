@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -9,11 +8,16 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/yamux"
 )
 
+var session *yamux.Session
+var dialer net.Dialer
+
 func main() {
+	dialer = net.Dialer{Timeout: time.Second * 5}
 	flag.Parse()
 
 	laddr := flag.Arg(0)
@@ -22,28 +26,59 @@ func main() {
 		log.Fatal("Please specify host:port to connect to")
 	}
 
-	conn, err := net.Dial("tcp", laddr)
+	go func() {
+		c := time.Tick(time.Second)
+		for range c {
+			if session != nil {
+				_, err := session.Ping()
+				if err != nil {
+					log.Printf("Disconnected from %s. Reconnecting...\n", session.RemoteAddr().String())
+					session.Close()
+					session = nil
+				}
+			}
+		}
+	}()
+	for {
+		connect(laddr)
+		time.Sleep(time.Second)
+	}
+}
+
+func connect(laddr string) {
+	log.Printf("Connecting to [%s]\n", laddr)
+	conn, err := dialer.Dial("tcp", laddr)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Could not connect to %s. Retrying...\n", laddr)
+		return
 	}
 
-	session, err := yamux.Server(conn, nil)
+	s, err := yamux.Server(conn, nil)
 	if err != nil {
 		panic(err)
 	}
+	session = s
 
+	log.Printf("Connected to %s\n", laddr)
 	for {
 		stream, err := session.Accept()
 		if err != nil {
-			panic(err)
+			log.Printf("Disconnected from %s\n", laddr)
+			return
 		}
-		lb, _, err := bufio.NewReader(stream).ReadLine()
+		line := make([]byte, 26)
+		n, err := stream.Read(line)
 		if err != nil {
 			log.Println(err)
 			stream.Close()
 			continue
 		}
-		l := string(lb)
+		if n != 26 {
+			log.Printf("Session header is wrong. Got: [%s]\n", string(line))
+			stream.Close()
+			continue
+		}
+		l := strings.TrimSpace(string(line))
 		chunks := strings.Split(l, " ")
 		if len(chunks) != 3 {
 			log.Printf("Session header is wrong. Got: [%s]\n", l)
@@ -87,4 +122,5 @@ func tunnel(protocol, ip string, port int, c net.Conn) {
 
 	go io.Copy(conn, c)
 	io.Copy(c, conn)
+	log.Println("Stopped tunneling")
 }
