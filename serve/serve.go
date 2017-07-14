@@ -127,16 +127,16 @@ func bind(ipnet *net.IPNet, ports []bindPort) {
 								log.Println(err)
 								return
 							}
-							go func() {
+							go func(ip string, port int) {
 								for {
 									c, err := l.Accept()
 									if err != nil {
 										log.Println(err)
 										continue
 									}
-									go tunnelTCP("tcp", ip, port.Port, c)
+									go tunnelTCP("tcp", ip, port, c)
 								}
-							}()
+							}(ip, port.Port)
 						} else {
 							// it is UDP
 							serverAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", ip, port.Port))
@@ -144,7 +144,7 @@ func bind(ipnet *net.IPNet, ports []bindPort) {
 								log.Println(err)
 								continue
 							}
-							go func() {
+							go func(ip string, port int) {
 								udpConn, err := net.ListenUDP("udp", serverAddr)
 								if err != nil {
 									log.Println(err)
@@ -158,9 +158,9 @@ func bind(ipnet *net.IPNet, ports []bindPort) {
 										continue
 									}
 									packet := buf[:n]
-									go tunnelUDP(ip, port.Port, packet, src, udpConn)
+									go tunnelUDP(ip, port, packet, src, udpConn)
 								}
-							}()
+							}(ip, port.Port)
 						}
 					}
 					boundedInterfaces[ip] = true
