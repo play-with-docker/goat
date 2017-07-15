@@ -55,7 +55,8 @@ func connect(laddr string) {
 
 	s, err := yamux.Server(conn, nil)
 	if err != nil {
-		panic(err)
+		log.Println("Could not create yamux session. Got:", err)
+		return
 	}
 	session = s
 

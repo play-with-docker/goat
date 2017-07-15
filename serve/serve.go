@@ -177,9 +177,19 @@ func tunnelUDP(ip string, port int, packet []byte, src *net.UDPAddr, udpConn *ne
 	}
 
 	if _, found := udpStreams[src.String()]; !found {
-		stream, err := tunnel.Open()
-		if err != nil {
-			panic(err)
+		var stream net.Conn
+		var err error
+		for i := 0; i < 10; i++ {
+			stream, err = tunnel.Open()
+			if err != nil {
+				log.Println("Error opening stream to tunnel UDP. Got: ", err)
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+		}
+		if stream == nil {
+			log.Println("Could not open stream to tunnel UDP. Giving up.")
+			return
 		}
 
 		go func() {
@@ -215,7 +225,7 @@ func tunnelUDP(ip string, port int, packet []byte, src *net.UDPAddr, udpConn *ne
 	stream := udpStreams[src.String()]
 	_, err := stream.Write(packet)
 	if err != nil {
-		panic(err)
+		log.Println("Error while writing to stream a UDP packet. Got: ", err)
 	}
 }
 
@@ -227,9 +237,19 @@ func tunnelTCP(protocol, ip string, port int, c net.Conn) {
 		return
 	}
 
-	stream, err := tunnel.Open()
-	if err != nil {
-		panic(err)
+	var stream net.Conn
+	var err error
+	for i := 0; i < 10; i++ {
+		stream, err = tunnel.Open()
+		if err != nil {
+			log.Println("Error opening stream to tunnel UDP. Got: ", err)
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+	}
+	if stream == nil {
+		log.Println("Could not open stream to tunnel UDP. Giving up.")
+		return
 	}
 	defer stream.Close()
 
@@ -261,7 +281,8 @@ func registerTunnel(c net.Conn) {
 	}
 	session, err := yamux.Client(c, nil)
 	if err != nil {
-		panic(err)
+		log.Println("Could not create yamux session. Got: ", err)
+		return
 	}
 	tunnel = session
 	log.Printf("Client connected from: %s", c.RemoteAddr().String())
