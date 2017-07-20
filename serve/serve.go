@@ -176,6 +176,10 @@ func tunnelUDP(ip string, port int, packet []byte, src *net.UDPAddr, udpConn *ne
 		return
 	}
 
+	if port == 4789 {
+		// since it is vxlan we need to respond to the vxlan default port
+		src.Port = 4789
+	}
 	if _, found := udpStreams[src.String()]; !found {
 		var stream net.Conn
 		var err error
@@ -196,7 +200,7 @@ func tunnelUDP(ip string, port int, packet []byte, src *net.UDPAddr, udpConn *ne
 			return
 		}
 
-		go func() {
+		go func(src *net.UDPAddr) {
 			defer func() {
 				stream.Close()
 				delete(udpStreams, src.String())
@@ -214,7 +218,7 @@ func tunnelUDP(ip string, port int, packet []byte, src *net.UDPAddr, udpConn *ne
 					return
 				}
 			}
-		}()
+		}(src)
 
 		header := fmt.Sprintf("%s %s %d", "udp", ip, port)
 		if len(header) < 25 {
