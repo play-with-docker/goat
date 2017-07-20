@@ -204,7 +204,9 @@ func openVXLANTunnel(iface string) (*vxlanTracker, error) {
 		return nil, err
 	}
 
-	c, err := net.Dial("udp", fmt.Sprintf("%s:4789", localIP))
+	a, _ := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:0", iface))
+	d := net.Dialer{LocalAddr: a}
+	c, err := d.Dial("udp", fmt.Sprintf("%s:4789", localIP))
 	if err != nil {
 		return nil, err
 	}
