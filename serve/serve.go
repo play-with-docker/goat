@@ -180,12 +180,16 @@ func tunnelUDP(ip string, port int, packet []byte, src *net.UDPAddr, udpConn *ne
 		var stream net.Conn
 		var err error
 		for i := 0; i < 10; i++ {
+			if tunnel == nil {
+				break
+			}
 			stream, err = tunnel.Open()
 			if err != nil {
 				log.Println("Error opening stream to tunnel UDP. Got: ", err)
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
+			break
 		}
 		if stream == nil {
 			log.Println("Could not open stream to tunnel UDP. Giving up.")
@@ -240,12 +244,16 @@ func tunnelTCP(protocol, ip string, port int, c net.Conn) {
 	var stream net.Conn
 	var err error
 	for i := 0; i < 10; i++ {
+		if tunnel == nil {
+			break
+		}
 		stream, err = tunnel.Open()
 		if err != nil {
 			log.Println("Error opening stream to tunnel UDP. Got: ", err)
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
+		break
 	}
 	if stream == nil {
 		log.Println("Could not open stream to tunnel UDP. Giving up.")
